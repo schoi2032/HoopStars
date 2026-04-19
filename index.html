@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Hoop Stars: Elite Round Robin</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Bungee&family=Inter:wght@400;900&display=swap');
+        
+        :root { --accent: #f97316; } /* Basketball Orange */
+        
+        body, html { 
+            margin: 0; padding: 0; width: 100%; height: 100%; 
+            overflow: hidden; background-color: #0c0a09; 
+            font-family: 'Inter', sans-serif; color: white;
+        }
+
+        #game-wrapper {
+            width: 100vw; height: 100vh;
+            display: flex; justify-content: center; align-items: center;
+            background: radial-gradient(circle at center, #431407 0%, #0c0a09 100%);
+            position: relative;
+        }
+
+        canvas { 
+            display: block;
+            background: linear-gradient(to bottom, #0c0a09 0%, #431407 70%, #78350f 100%);
+            box-shadow: 0 0 100px rgba(0,0,0,0.5);
+        }
+
+        .bungee { font-family: 'Bungee', cursive; }
+
+        .ui-overlay { 
+            position: absolute; inset: 0; 
+            pointer-events: none; z-index: 100;
+            display: flex; justify-content: center; align-items: center;
+            background: rgba(12, 10, 9, 0.6);
+            backdrop-filter: blur(8px);
+        }
+
+        .menu-card { 
+            pointer-events: auto; 
+            background: rgba(28, 25, 23, 0.95); 
+            padding: 2.5rem; border-radius: 1.5rem; 
+            border: 1px solid rgba(249, 115, 22, 0.3); 
+            text-align: center; width: 90%; max-width: 800px;
+        }
+
+        .table-row {
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr 1fr 1fr 1fr;
+            padding: 0.75rem;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            align-items: center;
+            font-size: 0.85rem;
+        }
+
+        .goal-popup { 
+            position: absolute; top: 40%; left: 50%; 
+            transform: translate(-50%, -50%) scale(0); 
+            font-size: clamp(3rem, 10vw, 8rem); color: var(--accent); 
+            text-shadow: 0 8px 0 #7c2d12; pointer-events: none; 
+            transition: transform 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275); 
+            z-index: 200; 
+        }
+        .goal-active { transform: translate(-50%, -50%) scale(1); }
+
+        .match-btn {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 0.5rem;
+            padding: 0.5rem 1rem;
+            margin: 0.25rem;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        .match-btn:hover:not(:disabled) { border-color: var(--accent); background: rgba(249, 115, 22, 0.1); }
+        .match-btn:disabled { opacity: 0.3; cursor: default; text-decoration: line-through; border-color: transparent; }
+    </style>
+</head>
+<body>
+    <div id="game-wrapper">
+        <div id="game-container">
+            <canvas id="gameCanvas"></canvas>
+            
+            <div id="goal-text" class="goal-popup bungee">SWISH!</div>
+
+            <!-- Nickname Entry -->
+            <div id="nickname-overlay" class="ui-overlay">
+                <div class="menu-card max-w-md">
+                    <h1 class="text-4xl bungee mb-2 tracking-tight text-orange-500">HOOP STARS</h1>
+                    <p class="text-xs bungee opacity-50 mb-6 italic">FINAL FOUR ROUND ROBIN</p>
+                    <div class="space-y-4">
+                        <input id="user-nick" type="text" maxlength="12" class="w-full p-4 bg-white/5 border border-white/20 rounded-xl text-center text-xl bungee uppercase focus:border-orange-500 outline-none transition-colors" placeholder="BALLER NAME">
+                        <button id="join-btn" class="w-full bg-orange-500 hover:bg-orange-400 text-stone-950 py-4 bungee text-xl rounded-xl transition-all">ENTER COURT</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Standings & Fixtures Menu -->
+            <div id="tournament-menu" class="ui-overlay hidden">
+                <div class="menu-card overflow-hidden flex flex-col max-h-[90vh]">
+                    <h1 class="text-3xl bungee text-orange-500 mb-6">SEASON STANDINGS</h1>
+                    
+                    <div class="bg-black/40 rounded-xl mb-6">
+                        <div class="table-row bungee text-orange-200/50 text-[10px]">
+                            <span>TEAM</span><span>P</span><span>W</span><span>L</span><span>PD</span><span>PTS</span>
+                        </div>
+                        <div id="standings-body"></div>
+                    </div>
+
+                    <h2 class="text-xl bungee mb-4 text-white/40">FIXTURES</h2>
+                    <div id="fixtures-list" class="grid grid-cols-2 gap-2 overflow-y-auto mb-6 pr-2"></div>
+
+                    <div id="match-preview" class="hidden p-4 bg-orange-500/10 rounded-xl border border-orange-500/30">
+                        <div class="flex justify-around items-center mb-4">
+                            <span id="prev-p1-name" class="bungee text-sm">TEAM A</span>
+                            <span class="bungee text-orange-500">VS</span>
+                            <span id="prev-p2-name" class="bungee text-sm">TEAM B</span>
+                        </div>
+                        <button id="kickoff-btn" class="w-full bg-orange-500 hover:bg-orange-400 text-stone-950 py-3 bungee text-lg rounded-xl">START GAME</button>
+                    </div>
+
+                    <button id="claim-winner-btn" class="hidden w-full bg-yellow-500 hover:bg-yellow-400 text-stone-950 py-4 bungee text-xl rounded-xl transition-all shadow-[0_0_20px_rgba(234,179,8,0.4)]">
+                        🏆 CLAIM SEASON WINNER
+                    </button>
+                </div>
+            </div>
+
+            <!-- HUD -->
+            <div id="hud" class="absolute top-8 left-0 w-full flex justify-center items-start pointer-events-none opacity-0 transition-opacity duration-500">
+                <div class="flex items-center gap-8 bg-stone-900/90 px-10 py-4 rounded-2xl backdrop-blur-md border border-orange-500/20 shadow-2xl">
+                    <div class="flex items-center gap-4">
+                        <img id="hud-p1-logo" class="w-12 h-12 object-contain" src="">
+                        <div id="hud-p1-score" class="text-5xl bungee leading-none">0</div>
+                    </div>
+                    <div class="flex flex-col items-center min-w-[120px]">
+                        <div id="timer" class="text-4xl bungee text-orange-500">00:45</div>
+                    </div>
+                    <div class="flex items-center gap-4">
+                        <div id="hud-p2-score" class="text-5xl bungee leading-none">0</div>
+                        <img id="hud-p2-logo" class="w-12 h-12 object-contain" src="">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Result -->
+            <div id="result-menu" class="ui-overlay hidden">
+                <div class="menu-card max-w-md">
+                    <h2 class="text-3xl bungee mb-2 text-white/60">GAME OVER</h2>
+                    <div id="winner-display" class="text-4xl bungee text-orange-500 mb-8">-</div>
+                    <button id="back-to-hub" class="bg-white hover:bg-stone-100 text-stone-950 w-full py-4 bungee text-xl rounded-xl">STANDINGS</button>
+                </div>
+            </div>
+
+            <!-- Finale Overlay -->
+            <div id="finale-overlay" class="ui-overlay hidden">
+                <div class="menu-card max-w-lg border-yellow-500 bg-black/95">
+                    <div class="mb-6 text-6xl">🏆</div>
+                    <h2 class="text-2xl bungee text-yellow-500 mb-2">SEASON CHAMPION</h2>
+                    <h1 id="champion-name" class="text-5xl bungee text-white mb-6">LAKERS</h1>
+                    <div id="champion-stats" class="text-sm text-white/60 mb-8 bungee">
+                        3-0 RECORD | +12 DIFF
+                    </div>
+                    <button onclick="location.reload()" class="bg-yellow-500 hover:bg-yellow-400 text-stone-950 w-full py-4 bungee text-xl rounded-xl">NEW SEASON</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const WIDTH = 1200, HEIGHT = 700, GROUND_Y = 640;
+        const GRAVITY = 0.5, BALL_BOUNCE = 0.82, FRICTION = 0.985; 
+        const HOOP_Y = 320, HOOP_WIDTH = 100; 
+        
+        const teams = [
+            { id: 'lal', name: 'LA Lakers', color: '#552583', logo: 'https://upload.wikimedia.org/wikipedia/commons/3/3c/Los_Angeles_Lakers_logo.svg', players: [{name: 'LeBron', num: 23}, {name: 'Davis', num: 3}, {name: 'Reaves', num: 15}, {name: 'Russell', num: 0}, {name: 'Hachimura', num: 28}] },
+            { id: 'gsw', name: 'GS Warriors', color: '#1D428A', logo: 'https://upload.wikimedia.org/wikipedia/en/0/01/Golden_State_Warriors_logo.svg', players: [{name: 'Curry', num: 30}, {name: 'Green', num: 23}, {name: 'Wiggins', num: 22}, {name: 'Kuminga', num: 0}, {name: 'Hield', num: 7}] },
+            { id: 'bos', name: 'Boston Celtics', color: '#007A33', logo: 'https://upload.wikimedia.org/wikipedia/en/8/8f/Boston_Celtics.svg', players: [{name: 'Tatum', num: 0}, {name: 'Brown', num: 7}, {name: 'Holiday', num: 4}, {name: 'White', num: 9}, {name: 'Porzingis', num: 8}] },
+            { id: 'dal', name: 'Dallas Mavs', color: '#00538C', logo: 'https://upload.wikimedia.org/wikipedia/en/9/97/Dallas_Mavericks_logo.svg', players: [{name: 'Luka', num: 77}, {name: 'Kyrie', num: 11}, {name: 'Thompson', num: 31}, {name: 'Lively', num: 2}, {name: 'Washington', num: 25}] }
+        ];
+
+        let standings = teams.map(t => ({...t, played: 0, won: 0, lost: 0, points: 0, pd: 0}));
+        let fixtures = [];
+        let activeMatch = null;
+        let p1Team, p2Team, p1Idx = 0, p2Idx = 0;
+        let score = [0, 0], gameTime = 45, gameRunning = false, isGoalScored = false;
+        const keys = {};
+
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        function resizeCanvas() {
+            const scale = Math.min(window.innerWidth / WIDTH, window.innerHeight / HEIGHT);
+            canvas.style.width = (WIDTH * scale) + 'px';
+            canvas.style.height = (HEIGHT * scale) + 'px';
+            canvas.width = WIDTH; canvas.height = HEIGHT;
+        }
+        window.onresize = resizeCanvas;
+        resizeCanvas();
+
+        class Ball {
+            constructor() { 
+                this.radius = 20; 
+                this.groundTime = 0;
+                this.reset(); 
+            } 
+            reset() { 
+                this.x = WIDTH / 2; 
+                this.y = 100; 
+                this.vx = 0; 
+                this.vy = 0; 
+                this.groundTime = 0;
+                isGoalScored = false; 
+            }
+            update() {
+                if(isGoalScored) return;
+                this.vy += GRAVITY;
+                this.x += this.vx; this.y += this.vy;
+                this.vx *= 0.999;
+
+                if (this.y + this.radius >= GROUND_Y - 2) { 
+                    this.y = GROUND_Y - this.radius; 
+                    this.vy *= -BALL_BOUNCE; 
+                    this.vx *= FRICTION; 
+                    if (Math.abs(this.vy) < 1.5) {
+                        this.groundTime += 16.67;
+                        if (this.groundTime >= 3000) this.randomThrow();
+                    } else { this.groundTime = 0; }
+                } else { this.groundTime = 0; }
+
+                if (this.x - this.radius < 0) { this.x = this.radius; this.vx *= -BALL_BOUNCE; }
+                if (this.x + this.radius > WIDTH) { this.x = WIDTH - this.radius; this.vx *= -BALL_BOUNCE; }
+
+                this.checkHoop(70, true);
+                this.checkHoop(WIDTH - 70 - HOOP_WIDTH, false);
+            }
+
+            randomThrow() {
+                const dir = this.x < WIDTH / 2 ? 1 : -1;
+                this.vx = (Math.random() * 8 + 4) * dir;
+                this.vy = -(Math.random() * 10 + 10);
+                this.groundTime = 0;
+            }
+
+            checkHoop(hx, isLeft) {
+                const rimY = HOOP_Y;
+                const rimX1 = hx;
+                const rimX2 = hx + HOOP_WIDTH;
+                if (this.vy > 0 && this.y > rimY && this.y - this.vy <= rimY) {
+                    if (this.x > rimX1 + 2 && this.x < rimX2 - 2) {
+                        handleGoal(isLeft ? 1 : 0);
+                        return;
+                    }
+                }
+                [rimX1, rimX2].forEach(rx => {
+                    const dx = this.x - rx, dy = this.y - rimY;
+                    const dist = Math.sqrt(dx*dx + dy*dy);
+                    if (dist < this.radius + 2) {
+                        const angle = Math.atan2(dy, dx);
+                        const push = 6; 
+                        this.vx = Math.cos(angle) * push;
+                        this.vy = Math.sin(angle) * push;
+                    }
+                });
+            }
+            draw() {
+                ctx.save(); ctx.translate(this.x, this.y); ctx.rotate(this.x / 20);
+                if (this.groundTime > 1000) {
+                    ctx.beginPath();
+                    ctx.arc(0, 0, this.radius + 5, 0, (Math.PI * 2) * (this.groundTime / 3000));
+                    ctx.strokeStyle = `rgba(249, 115, 22, ${this.groundTime / 3000})`;
+                    ctx.lineWidth = 3; ctx.stroke();
+                }
+                ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = '#f97316'; ctx.fill();
+                ctx.strokeStyle = '#000'; ctx.lineWidth = 2; ctx.stroke();
+                ctx.beginPath(); ctx.ellipse(0, 0, this.radius*0.8, this.radius, 0, 0, Math.PI*2); ctx.stroke();
+                ctx.restore();
+            }
+        }
+
+        class Player {
+            constructor(x, isP1) {
+                this.startX = x; this.x = x; this.y = GROUND_Y - 45;
+                this.vx = 0; this.vy = 0; this.isP1 = isP1;
+                this.radius = 45; this.jumpPower = -15; this.speed = 9;
+                this.logo = new Image();
+            }
+            reset() { this.x = this.startX; this.y = GROUND_Y - this.radius; this.vx = 0; this.vy = 0; }
+            update() {
+                if (isGoalScored) return;
+                const left = this.isP1 ? 'KeyA' : 'ArrowLeft';
+                const right = this.isP1 ? 'KeyD' : 'ArrowRight';
+                const up = this.isP1 ? 'KeyW' : 'ArrowUp';
+                const sub = this.isP1 ? 'KeyS' : 'ArrowDown';
+                if (keys[left]) this.vx = -this.speed;
+                else if (keys[right]) this.vx = this.speed; else this.vx = 0;
+                if (keys[up] && this.y + this.radius >= GROUND_Y) this.vy = this.jumpPower;
+                if (keys[sub]) {
+                    const lock = 'lock' + this.isP1;
+                    if (!keys[lock]) {
+                        keys[lock] = true; setTimeout(() => delete keys[lock], 300);
+                        if (this.isP1) p1Idx = (p1Idx + 1) % p1Team.players.length;
+                        else p2Idx = (p2Idx + 1) % p2Team.players.length;
+                    }
+                }
+                this.vy += GRAVITY; this.x += this.vx; this.y += this.vy;
+                if (this.x - this.radius < 0) this.x = this.radius;
+                if (this.x + this.radius > WIDTH) this.x = WIDTH - this.radius;
+                if (this.y + this.radius > GROUND_Y) { this.y = GROUND_Y - this.radius; this.vy = 0; }
+            }
+            draw() {
+                const team = this.isP1 ? p1Team : p2Team;
+                const player = team.players[this.isP1 ? p1Idx : p2Idx];
+                if (this.logo.src !== team.logo) this.logo.src = team.logo;
+                ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = team.color; ctx.fill();
+                ctx.strokeStyle = '#fff'; ctx.lineWidth = 5; ctx.stroke();
+                if (this.logo.complete) {
+                    ctx.save(); ctx.beginPath(); ctx.arc(this.x, this.y, this.radius - 2, 0, Math.PI*2); ctx.clip();
+                    ctx.drawImage(this.logo, this.x - 32, this.y - 32, 64, 64);
+                    ctx.restore();
+                }
+                ctx.fillStyle = '#fff'; ctx.font = '900 13px Inter'; ctx.textAlign = 'center';
+                ctx.fillText(player.name.toUpperCase(), this.x, this.y - this.radius - 15);
+            }
+        }
+
+        const ball = new Ball(), p1 = new Player(300, true), p2 = new Player(900, false);
+
+        function drawHoop(x, isLeft) {
+            // Main Backboard Pole
+            ctx.strokeStyle = '#fff'; ctx.lineWidth = 6;
+            const poleX = isLeft ? x - 20 : x + HOOP_WIDTH + 20;
+            ctx.beginPath(); ctx.moveTo(poleX, HOOP_Y + 50); ctx.lineTo(poleX, HOOP_Y - 100); ctx.stroke();
+            
+            // Solid Backboard (Removed the inner rectangle "hole")
+            ctx.fillStyle = 'rgba(255,255,255,0.2)';
+            ctx.strokeStyle = '#fff'; ctx.lineWidth = 6;
+            const bbX = isLeft ? poleX - 80 : poleX;
+            ctx.fillRect(bbX, HOOP_Y - 140, 80, 100);
+            ctx.strokeRect(bbX, HOOP_Y - 140, 80, 100);
+            
+            // Rim
+            ctx.strokeStyle = '#f97316'; ctx.lineWidth = 8;
+            ctx.beginPath(); ctx.moveTo(x, HOOP_Y); ctx.lineTo(x + HOOP_WIDTH, HOOP_Y); ctx.stroke();
+            
+            // Net
+            ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 2;
+            for(let i=0; i<=HOOP_WIDTH; i+=15) {
+                ctx.beginPath(); ctx.moveTo(x+i, HOOP_Y); ctx.lineTo(x + HOOP_WIDTH/2, HOOP_Y + 75); ctx.stroke();
+            }
+        }
+
+        function handleGoal(scorer) {
+            if (isGoalScored) return;
+            isGoalScored = true; score[scorer]++;
+            document.getElementById('goal-text').classList.add('goal-active');
+            document.getElementById('hud-p1-score').innerText = score[0];
+            document.getElementById('hud-p2-score').innerText = score[1];
+            setTimeout(() => {
+                document.getElementById('goal-text').classList.remove('goal-active');
+                ball.reset(); p1.reset(); p2.reset();
+            }, 1200);
+        }
+
+        function mainLoop() {
+            if (!gameRunning) return;
+            ctx.clearRect(0, 0, WIDTH, HEIGHT);
+            ctx.strokeStyle = 'rgba(255,255,255,0.1)'; ctx.lineWidth = 3;
+            ctx.beginPath(); ctx.moveTo(WIDTH/2, 0); ctx.lineTo(WIDTH/2, GROUND_Y); ctx.stroke();
+            drawHoop(70, true);
+            drawHoop(WIDTH - 70 - HOOP_WIDTH, false);
+            p1.update(); p2.update(); ball.update();
+
+            const dist1 = Math.sqrt((ball.x - p1.x)**2 + (ball.y - p1.y)**2);
+            const dist2 = Math.sqrt((ball.x - p2.x)**2 + (ball.y - p2.y)**2);
+            const coll1 = dist1 < p1.radius + ball.radius;
+            const coll2 = dist2 < p2.radius + ball.radius;
+
+            if (coll1 && coll2) {
+                ball.vy = -28; 
+                ball.vx = (Math.random() - 0.5) * 10;
+                ball.y = Math.min(p1.y, p2.y) - p1.radius - ball.radius - 10;
+                ball.groundTime = 0;
+            } else {
+                [p1, p2].forEach(p => {
+                    const dx = ball.x - p.x, dy = ball.y - p.y;
+                    const d = Math.sqrt(dx*dx + dy*dy);
+                    if (d < p.radius + ball.radius) {
+                        const angle = Math.atan2(dy, dx);
+                        const force = 15 + Math.abs(p.vx) * 0.7;
+                        ball.vx = Math.cos(angle) * force;
+                        ball.vy = Math.sin(angle) * force - 6; 
+                        ball.x = p.x + Math.cos(angle) * (p.radius + ball.radius + 1);
+                        ball.y = p.y + Math.sin(angle) * (p.radius + ball.radius + 1);
+                        ball.groundTime = 0;
+                    }
+                });
+            }
+
+            p1.draw(); p2.draw(); ball.draw();
+            requestAnimationFrame(mainLoop);
+        }
+
+        function initSeason() {
+            fixtures = [];
+            for(let i=0; i<standings.length; i++) {
+                for(let j=i+1; j<standings.length; j++) {
+                    fixtures.push({ p1: standings[i], p2: standings[j], completed: false });
+                }
+            }
+            renderHub();
+        }
+
+        function renderHub() {
+            const sorted = [...standings].sort((a,b) => b.points - a.points || b.pd - a.pd);
+            const tbody = document.getElementById('standings-body');
+            tbody.innerHTML = '';
+            sorted.forEach(t => {
+                const pdColor = t.pd > 0 ? 'text-green-400' : t.pd < 0 ? 'text-red-400' : 'text-white/40';
+                const row = document.createElement('div');
+                row.className = 'table-row text-white/80';
+                row.innerHTML = `
+                    <span class="font-bold truncate pr-2">${t.name}</span>
+                    <span>${t.played}</span>
+                    <span>${t.won}</span>
+                    <span>${t.lost}</span>
+                    <span class="${pdColor}">${t.pd > 0 ? '+' : ''}${t.pd}</span>
+                    <span class="text-orange-500 font-black">${t.points}</span>
+                `;
+                tbody.appendChild(row);
+            });
+
+            const flist = document.getElementById('fixtures-list');
+            flist.innerHTML = '';
+            fixtures.forEach((f, idx) => {
+                const btn = document.createElement('button');
+                btn.className = 'match-btn text-[10px] bungee';
+                btn.disabled = f.completed;
+                btn.innerText = f.completed ? 'MATCH ENDED' : `${f.p1.name} VS ${f.p2.name}`;
+                if (!f.completed) {
+                    btn.onclick = () => {
+                        activeMatch = f;
+                        p1Team = f.p1; p2Team = f.p2;
+                        document.getElementById('prev-p1-name').innerText = p1Team.name;
+                        document.getElementById('prev-p2-name').innerText = p2Team.name;
+                        document.getElementById('match-preview').classList.remove('hidden');
+                    };
+                }
+                flist.appendChild(btn);
+            });
+
+            const allDone = fixtures.every(f => f.completed);
+            if (allDone) {
+                document.getElementById('claim-winner-btn').classList.remove('hidden');
+            }
+        }
+
+        function startMatch() {
+            document.getElementById('tournament-menu').classList.add('hidden');
+            document.getElementById('hud').classList.remove('opacity-0');
+            document.getElementById('hud-p1-logo').src = p1Team.logo;
+            document.getElementById('hud-p2-logo').src = p2Team.logo;
+            score = [0, 0]; gameTime = 45; gameRunning = true;
+            document.getElementById('hud-p1-score').innerText = '0';
+            document.getElementById('hud-p2-score').innerText = '0';
+            p1Idx = 0; p2Idx = 0;
+            ball.reset(); p1.reset(); p2.reset();
+            mainLoop();
+            const timerInt = setInterval(() => {
+                if(!gameRunning) { clearInterval(timerInt); return; }
+                if(!isGoalScored) gameTime--;
+                document.getElementById('timer').innerText = `00:${gameTime < 10 ? '0' : ''}${gameTime}`;
+                if(gameTime <= 0) { clearInterval(timerInt); finishMatch(); }
+            }, 1000);
+        }
+
+        function finishMatch() {
+            gameRunning = false;
+            if (score[0] === score[1]) score[Math.random() > 0.5 ? 0 : 1]++; 
+            
+            const p1Diff = score[0] - score[1];
+            const p2Diff = score[1] - score[0];
+            const winIdx = score[0] > score[1] ? 0 : 1;
+            const winner = winIdx === 0 ? p1Team : p2Team;
+
+            activeMatch.completed = true;
+            const s1 = standings.find(t => t.id === p1Team.id);
+            const s2 = standings.find(t => t.id === p2Team.id);
+            
+            s1.played++; s2.played++;
+            s1.pd += p1Diff; s2.pd += p2Diff;
+            
+            if (winIdx === 0) { s1.won++; s1.points += 2; s2.lost++; } 
+            else { s2.won++; s2.points += 2; s1.lost++; }
+
+            document.getElementById('result-menu').classList.remove('hidden');
+            document.getElementById('winner-display').innerText = `${winner.name.toUpperCase()} WINS!`;
+        }
+
+        function claimWinner() {
+            const sorted = [...standings].sort((a,b) => b.points - a.points || b.pd - a.pd);
+            const champ = sorted[0];
+            
+            document.getElementById('tournament-menu').classList.add('hidden');
+            document.getElementById('finale-overlay').classList.remove('hidden');
+            document.getElementById('champion-name').innerText = champ.name.toUpperCase();
+            document.getElementById('champion-stats').innerText = `${champ.won}-${champ.lost} RECORD | ${champ.pd > 0 ? '+' : ''}${champ.pd} DIFF`;
+        }
+
+        document.getElementById('join-btn').onclick = () => {
+            const n = document.getElementById('user-nick').value.trim();
+            if(!n) return;
+            document.getElementById('nickname-overlay').classList.add('hidden');
+            document.getElementById('tournament-menu').classList.remove('hidden');
+            initSeason();
+        };
+
+        document.getElementById('kickoff-btn').onclick = startMatch;
+        document.getElementById('claim-winner-btn').onclick = claimWinner;
+        document.getElementById('back-to-hub').onclick = () => {
+            document.getElementById('result-menu').classList.add('hidden');
+            document.getElementById('hud').classList.add('opacity-0');
+            document.getElementById('tournament-menu').classList.remove('hidden');
+            document.getElementById('match-preview').classList.add('hidden');
+            renderHub();
+        };
+
+        window.onkeydown = e => keys[e.code] = true;
+        window.onkeyup = e => keys[e.code] = false;
+    </script>
+</body>
+</html>
